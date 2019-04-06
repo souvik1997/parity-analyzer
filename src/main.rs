@@ -12,7 +12,6 @@ use std::io::{BufReader, BufRead};
 
 use structopt::StructOpt;
 use serde::{Serialize, Deserialize};
-use rayon::prelude::*;
 
 #[derive(Default, Clone, Copy, Eq, Debug, PartialEq, Serialize, Deserialize, Add, AddAssign, Mul, Sub, Div)]
 pub struct DBStatsEntry {
@@ -109,8 +108,9 @@ struct Opt {
     files: Vec<PathBuf>,
 }
 
-#[derive(Default, Clone, Copy, Eq, Debug, PartialEq)]
+#[derive(Clone, Copy, Eq, Debug, PartialEq, Serialize, Deserialize)]
 struct BlockStats {
+    pub block_num: usize,
     pub block_size: usize,
     pub witness_size: usize,
     pub num_transfers: usize,
@@ -126,13 +126,38 @@ struct BlockStats {
 }
 
 impl BlockStats {
+    fn new(block_num: usize) -> Self {
+        Self {
+            block_num: block_num,
+            block_size: 0,
+            witness_size: 0,
+            num_transfers: 0,
+            num_contracts: 0,
+            unique_accounts_touched_by_transfers: 0,
+            unique_accounts_touched_by_contracts: 0,
+            total_transfer_db_stats: UnifiedStats::default(),
+            total_contract_db_stats: UnifiedStats::default(),
+            total_db_stats: UnifiedStats::default(),
+            on_disk_size: None,
+            added_witness_data: false,
+            added_stats_data: false,
+        }
+    }
+
     fn add_witness_data(&mut self, w: &WitnessRecord) {
+        if self.added_witness_data {
+            return;
+        }
         self.block_size = w.block_bytes;
         self.witness_size = w.bytes;
         self.added_witness_data = true;
     }
 
     fn add_stats_data(&mut self, s: &StatsRecord) {
+        if self.added_stats_data {
+            return;
+        }
+
         let mut num_transfers = 0;
         let mut num_contracts = 0;
         let mut total_transfer_db_stats = UnifiedStats::default();
@@ -168,7 +193,7 @@ impl BlockStats {
 }
 
 struct ParityStats {
-    block_stats: Vec<BlockStats>,
+    block_stats: BTreeMap<usize, BlockStats>,
 }
 
 impl ParityStats {
@@ -181,10 +206,10 @@ impl ParityStats {
                 Some(ref pl) => {
                     match pl {
                         ParsedLine::Witness(block_num, ref w) => {
-                            block_stats.entry(*block_num).or_default().add_witness_data(&w);
+                            block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_witness_data(&w);
                         }
                         ParsedLine::Stats(block_num, ref s) => {
-                            block_stats.entry(*block_num).or_default().add_stats_data(&s);
+                            block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_stats_data(&s);
                         }
                     }
                 }
@@ -195,22 +220,14 @@ impl ParityStats {
                 println!("Parsed {} records", index);
             }
         }
-
-        let mut bv = Vec::new();
-        for (k, v) in block_stats {
-            if k != bv.len() + 1 {
-                panic!("error: skipped blocks {}..{}", bv.len() + 1, k);
+        for (_, v) in &block_stats {
+            if v.added_stats_data && v.added_witness_data {
+                println!("{}", serde_json::to_string(&v).unwrap());
             }
-
-            if !(v.added_stats_data && v.added_witness_data) {
-                panic!("error: incomplete data for block {}", k);
-            }
-
-            bv.push(v);
         }
 
         Self {
-            block_stats: bv
+            block_stats: block_stats
         }
     }
 }
