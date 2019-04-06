@@ -4,6 +4,7 @@ extern crate serde_json;
 extern crate rayon;
 #[macro_use]
 extern crate derive_more;
+extern crate csv;
 
 use std::path::PathBuf;
 use std::collections::{HashMap, BTreeMap};
@@ -72,7 +73,7 @@ enum ParsedLine {
 
 fn parse_line(line: &str) -> Option<ParsedLine> {
     if let Some(index) = line.find("TRACE stateless  ") {
-        let line_part = &line[(index + 7)..];
+        let line_part = &line[(index + 24)..];
         let first_space_index = line_part.find(" ").unwrap();
         let block_num: usize = line_part[..first_space_index].parse().unwrap();
 
@@ -83,7 +84,7 @@ fn parse_line(line: &str) -> Option<ParsedLine> {
 
 
         let block_bytes_index = line_part.find("block_bytes: ").unwrap();
-        let block_bytes_part = &line_part[(block_bytes_index + 7)..];
+        let block_bytes_part = &line_part[(block_bytes_index + 13)..];
         let block_bytes_sep_index = block_bytes_part.find(",").unwrap();
         let block_bytes: usize = block_bytes_part[..block_bytes_sep_index].parse().unwrap();
         Some(ParsedLine::Witness(block_num, WitnessRecord { bytes: bytes, block_bytes: block_bytes }))
@@ -217,14 +218,17 @@ impl ParityStats {
 
             index += 1;
             if index % 100000 == 0 {
-                println!("Parsed {} records", index);
+                eprintln!("Parsed {} records", index);
             }
         }
+
+        let mut wtr = csv::Writer::from_writer(::std::io::stdout());
         for (_, v) in &block_stats {
             if v.added_stats_data && v.added_witness_data {
-                println!("{}", serde_json::to_string(&v).unwrap());
+                wtr.serialize(v);
             }
         }
+        wtr.flush().expect("failed to flush");
 
         Self {
             block_stats: block_stats
@@ -236,6 +240,6 @@ fn main() {
     let opt = Opt::from_args();
     dbg!(::std::mem::size_of::<Option<ParsedLine>>());
     dbg!(::std::mem::size_of::<BlockStats>());
-    println!("Parsing files: {:?}", opt.files);
+    eprintln!("Parsing files: {:?}", opt.files);
     let ps = ParityStats::from_iter(opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
 }
