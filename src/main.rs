@@ -9,7 +9,7 @@ extern crate csv;
 use std::path::PathBuf;
 use std::collections::{HashMap, BTreeMap};
 use std::fs::File;
-use std::io::{BufReader, BufRead};
+use std::io::{BufReader, BufRead, Write};
 
 use structopt::StructOpt;
 use serde::{Serialize, Deserialize};
@@ -222,13 +222,13 @@ impl ParityStats {
             }
         }
 
-        let mut wtr = csv::Writer::from_writer(::std::io::stdout());
+        let stdout = ::std::io::stdout();
+        let mut lock = stdout.lock();
         for (_, v) in &block_stats {
             if v.added_stats_data && v.added_witness_data {
-                wtr.serialize(v);
+                writeln!(lock, "{}", serde_json::to_string(&v).unwrap()).expect("failed to write to stdout");
             }
         }
-        wtr.flush().expect("failed to flush");
 
         Self {
             block_stats: block_stats
