@@ -8,8 +8,8 @@ extern crate csv;
 
 use std::path::PathBuf;
 use std::collections::{HashMap, BTreeMap};
-use std::fs::File;
-use std::io::{BufReader, BufRead, Write};
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, BufRead};
 
 use structopt::StructOpt;
 use serde::{Serialize, Deserialize};
@@ -105,6 +105,9 @@ fn parse_line(line: &str) -> Option<ParsedLine> {
 #[derive(Debug, StructOpt)]
 #[structopt(name = "parity-analyzer", about = "An example of StructOpt usage.")]
 struct Opt {
+    #[structopt(short = "-o", long="--output", name = "output", parse(from_os_str))]
+    output_file: Option<PathBuf>,
+
     #[structopt(name = "FILE", parse(from_os_str))]
     files: Vec<PathBuf>,
 }
@@ -193,6 +196,7 @@ impl BlockStats {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
 struct ParityStats {
     block_stats: BTreeMap<usize, BlockStats>,
 }
@@ -221,15 +225,6 @@ impl ParityStats {
                 eprintln!("Parsed {} records", index);
             }
         }
-
-        let stdout = ::std::io::stdout();
-        let mut lock = stdout.lock();
-        for (_, v) in &block_stats {
-            if v.added_stats_data && v.added_witness_data {
-                writeln!(lock, "{}", serde_json::to_string(&v).unwrap()).expect("failed to write to stdout");
-            }
-        }
-
         Self {
             block_stats: block_stats
         }
@@ -242,4 +237,12 @@ fn main() {
     dbg!(::std::mem::size_of::<BlockStats>());
     eprintln!("Parsing files: {:?}", opt.files);
     let ps = ParityStats::from_iter(opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
+
+    match opt.output_file {
+        Some(output_file) => {
+            let output_file = OpenOptions::new().create(true).write(true).open(output_file).expect("Failed to open output file");
+            serde_json::to_writer(output_file, &ps).expect("Failed to write to output file");
+        }
+        None => {}
+    }
 }
