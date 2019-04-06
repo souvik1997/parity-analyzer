@@ -236,6 +236,7 @@ fn main() {
     dbg!(::std::mem::size_of::<Option<ParsedLine>>());
     dbg!(::std::mem::size_of::<BlockStats>());
     eprintln!("Parsing files: {:?}", opt.files);
+    eprintln!("Output file: {:?}", opt.output_file);
     let ps = ParityStats::from_iter(opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
 
     match opt.output_file {
