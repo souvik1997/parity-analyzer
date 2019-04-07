@@ -5,11 +5,13 @@ extern crate rayon;
 #[macro_use]
 extern crate derive_more;
 extern crate csv;
+extern crate gnuplot;
 
 use std::path::PathBuf;
 use std::collections::{HashMap, BTreeMap};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufRead, BufWriter};
+use gnuplot::Figure;
 
 use structopt::StructOpt;
 use serde::{Serialize, Deserialize};
@@ -116,6 +118,13 @@ struct Opt {
 
     #[structopt(long="--max", name = "max")]
     max_block_num: Option<usize>,
+
+    #[structopt(long="--gnuplot-terminal", name="gnuplot terminal")]
+    gnuplot_terminal: Option<String>,
+
+    #[structopt(long="--gnuplot-output-file", name="gnuplot output file", parse(from_os_str))]
+    gnuplot_output_file: Option<PathBuf>,
+
 
     #[structopt(name = "FILE", parse(from_os_str))]
     files: Vec<PathBuf>,
@@ -296,17 +305,22 @@ impl ParityStats {
             let block = self.block_stats.get(&max_block_num).unwrap();
             eprintln!("Max witness size at #{} with {} bytes ({} block bytes)", max_block_num, block.witness_size, block.block_size);
         }
+    }
 
+    pub fn plot_witness_sizes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
+        use gnuplot::*;
+
+        fg.axes2d()
+            .points(self.block_stats.iter().map(|(k, _)| *k), self.block_stats.iter().map(|(_, v)| v.witness_size), &[Caption("Witness size"), Color("black"), PointSymbol('.'), PointSize(0.25)])
+            .set_x_label("Block number", &[])
+            .set_y_label("Witness size (bytes)", &[]);
+        fg
     }
 }
 
 fn main() {
     let opt = Opt::from_args();
-    dbg!(::std::mem::size_of::<Option<ParsedLine>>());
-    dbg!(::std::mem::size_of::<BlockStats>());
-    eprintln!("Parsing files: {:?}", opt.files);
-    eprintln!("Output file: {:?}", opt.output_file);
-    eprintln!("Input file: {:?}", opt.input_file);
+    eprintln!("Options: {:?}", opt);
     let mut ps = ParityStats::from_iter(opt.min_block_num, opt.max_block_num, opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
 
     match opt.input_file {
@@ -320,6 +334,23 @@ fn main() {
 
     eprintln!("Block intervals: {:?}", ps.block_intervals());
     ps.print_statistics();
+
+    match opt.gnuplot_terminal {
+        Some(gnuplot_terminal) => {
+            if gnuplot_terminal != "wxt" {
+                assert!(opt.gnuplot_output_file.is_some());
+            }
+            let mut fg = Figure::new();
+            fg.set_terminal(&gnuplot_terminal, &opt.gnuplot_output_file.clone().map(|s| s.to_str().unwrap().to_owned()).unwrap_or("".to_owned()));
+            ps.plot_witness_sizes(&mut fg).show();
+            if gnuplot_terminal != "wxt" {
+                fg.close();
+            }
+        }
+        None => {}
+    }
+
+
 
     match opt.output_file {
         Some(output_file) => {
