@@ -228,6 +228,10 @@ fn in_range(min_block_num: Option<usize>, max_block_num: Option<usize>, k: usize
     }
 }
 
+fn complete_block_stats<'a>(v: &(&'a usize, &'a BlockStats)) -> bool  {
+    v.1.added_stats_data && v.1.added_witness_data
+}
+
 impl ParityStats {
     pub fn from_iter<I>(min_block_num: Option<usize>, max_block_num: Option<usize>, it: I) -> Self where I: Iterator<Item = Option<ParsedLine>> {
         let mut block_stats: BTreeMap<usize, BlockStats> = BTreeMap::new();
@@ -270,7 +274,7 @@ impl ParityStats {
 
     pub fn block_intervals(&self) -> Vec<(usize, usize)> {
         let mut intervals = Vec::new();
-        for (k, _) in &self.block_stats {
+        for (k, _) in self.block_stats.iter().filter(|c| complete_block_stats(c)) {
             if intervals.len() == 0 {
                 intervals.push((*k, *k));
             } else {
@@ -288,14 +292,14 @@ impl ParityStats {
     pub fn print_statistics(&self) {
         // Average witness size per block
         {
-            let (count, total)  = self.block_stats.iter().map(|(_, v)| (1, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
+            let (count, total)  = self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| (1, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
                 (a + x, b + y)
             });
             eprintln!("Average witness size for {} blocks: {}", count, (total as f64) / (count as f64));
         }
 
         {
-            let (max_block_num, _)  = self.block_stats.iter().map(|(k, v)| (*k, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
+            let (max_block_num, _)  = self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
                 if y > b {
                     (x, y)
                 } else {
@@ -311,7 +315,7 @@ impl ParityStats {
         use gnuplot::*;
 
         fg.axes2d()
-            .points(self.block_stats.iter().map(|(k, _)| *k), self.block_stats.iter().map(|(_, v)| v.witness_size), &[Caption("Witness size"), Color("black"), PointSymbol('.'), PointSize(0.25)])
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.witness_size), &[Caption("Witness size"), Color("black"), PointSymbol('.'), PointSize(0.25)])
             .set_x_label("Block number", &[])
             .set_y_label("Witness size (bytes)", &[]);
         fg
