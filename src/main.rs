@@ -321,6 +321,26 @@ impl ParityStats {
             let block = self.block_stats.get(&max_block_num).unwrap();
             eprintln!("Max witness size at #{} with {} bytes ({} block bytes)", max_block_num, block.witness_size, block.block_size);
         }
+
+        // Average block size per block
+        {
+            let (count, total)  = self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| (1, v.block_size)).fold((0, 0), |(a, b), (x, y)| {
+                (a + x, b + y)
+            });
+            eprintln!("Average block size for {} blocks: {}", count, (total as f64) / (count as f64));
+        }
+
+        {
+            let (max_block_num, _)  = self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.block_size)).fold((0, 0), |(a, b), (x, y)| {
+                if y > b {
+                    (x, y)
+                } else {
+                    (a, b)
+                }
+            });
+            let block = self.block_stats.get(&max_block_num).unwrap();
+            eprintln!("Max block size at #{} with {} bytes ({} witness bytes)", max_block_num, block.block_size, block.witness_size);
+        }
     }
 
     pub fn plot_witness_sizes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
