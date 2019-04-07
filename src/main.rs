@@ -304,46 +304,122 @@ impl ParityStats {
         intervals
     }
 
+    fn print_statistics_inner<F, G>(&self, name: &str, interval: usize, mut f: F) where F: FnMut(&BlockStats) -> Option<G>, G: Default + PartialOrd + ::std::fmt::Display + ::std::ops::Add<G, Output = G> + Into<usize> {
+        eprintln!("{}", name);
+
+        let (count, total)  = self.block_stats.iter()
+            .filter(|c| complete_block_stats(c))
+            .map(|(_, v)| (1, f(v)))
+            .filter(|v| v.1.is_some())
+            .map(|(k, v)| (k, v.unwrap()))
+            .fold((0, G::default()), |(a, b), (x, y)| {
+            (a + x, b + y)
+        });
+        let total_usize: usize = total.into();
+        eprintln!("- average {}", (total_usize as f64) / (count as f64));
+
+        let (max_block_num, _)  = self.block_stats.iter()
+            .filter(|c| complete_block_stats(c))
+            .map(|(k, v)| (*k, f(v)))
+            .filter(|v| v.1.is_some())
+            .map(|(k, v)| (k, v.unwrap()))
+            .fold((0, G::default()), |(a, b), (x, y)| {
+            if y >= b {
+                (x, y)
+            } else {
+                (a, b)
+            }
+        });
+        let block = self.block_stats.get(&max_block_num).unwrap();
+        eprintln!("- max {} at #{}", f(block).unwrap(), max_block_num);
+
+        let mut start = 0;
+        loop {
+
+            let (count, total)  = self.block_stats.iter()
+                .filter(|c| complete_block_stats(c))
+                .skip(start)
+                .take(interval)
+                .map(|(_, v)| (1, f(v)))
+                .filter(|v| v.1.is_some())
+                .map(|(k, v)| (k, v.unwrap()))
+                .fold((0, G::default()), |(a, b), (x, y)| {
+                    (a + x, b + y)
+                });
+
+            if count == 0 {
+                break;
+            }
+
+            eprintln!("- {}..{}:", start, start + interval);
+
+            let total_usize: usize = total.into();
+            eprintln!(" - average {}", (total_usize as f64) / (count as f64));
+
+            let (max_block_num, _)  = self.block_stats.iter()
+                .filter(|c| complete_block_stats(c))
+                .skip(start)
+                .take(interval)
+                .map(|(k, v)| (*k, f(v)))
+                .filter(|v| v.1.is_some())
+                .map(|(k, v)| (k, v.unwrap()))
+                .fold((0, G::default()), |(a, b), (x, y)| {
+                    if y >= b {
+                        (x, y)
+                    } else {
+                        (a, b)
+                    }
+                });
+
+            let block = self.block_stats.get(&max_block_num).unwrap();
+            eprintln!(" - max {} at #{}", f(block).unwrap(), max_block_num);
+            start += interval;
+        }
+    }
+
     pub fn print_statistics(&self) {
-        // Average witness size per block
-        {
-            let (count, total)  = self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| (1, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
-                (a + x, b + y)
-            });
-            eprintln!("Average witness size for {} blocks: {}", count, (total as f64) / (count as f64));
-        }
+        self.print_statistics_inner("witness size", 500000, |v| Some(v.witness_size));
+        self.print_statistics_inner("block size", 500000, |v| Some(v.block_size));
+        self.print_statistics_inner("on disk size", 500000, |v| v.on_disk_size.map(|s| s as usize));
+        self.print_statistics_inner("db read operations (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.read.ops));
+        self.print_statistics_inner("db read operations (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.read.ops));
+        self.print_statistics_inner("db write operations (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.write.ops));
+        self.print_statistics_inner("db write operations (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.write.ops));
+        self.print_statistics_inner("db delete operations (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.delete.ops));
+        self.print_statistics_inner("db delete operations (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.delete.ops));
+        self.print_statistics_inner("db read bytes (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.read.bytes));
+        self.print_statistics_inner("db read bytes (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.read.bytes));
+        self.print_statistics_inner("db write bytes (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.write.bytes));
+        self.print_statistics_inner("db write bytes (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.write.bytes));
+        self.print_statistics_inner("db delete bytes (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.delete.bytes));
+        self.print_statistics_inner("db delete bytes (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.delete.bytes));
 
-        {
-            let (max_block_num, _)  = self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
-                if y > b {
-                    (x, y)
-                } else {
-                    (a, b)
-                }
-            });
-            let block = self.block_stats.get(&max_block_num).unwrap();
-            eprintln!("Max witness size at #{} with {} bytes ({} block bytes)", max_block_num, block.witness_size, block.block_size);
-        }
+        self.print_statistics_inner("unique accounts touched", 500000, |v| {
+            let total = v.unique_accounts_touched_by_transfers + v.unique_accounts_touched_by_contracts;
+            if total == 0 {
+                None
+            } else {
+                Some(total)
+            }
+        });
 
-        // Average block size per block
-        {
-            let (count, total)  = self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| (1, v.block_size)).fold((0, 0), |(a, b), (x, y)| {
-                (a + x, b + y)
-            });
-            eprintln!("Average block size for {} blocks: {}", count, (total as f64) / (count as f64));
-        }
+        self.print_statistics_inner("unique accounts touched by transfers", 500000, |v| {
+            let total = v.unique_accounts_touched_by_transfers;
+            if total == 0 {
+                None
+            } else {
+                Some(total)
+            }
+        });
 
-        {
-            let (max_block_num, _)  = self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.block_size)).fold((0, 0), |(a, b), (x, y)| {
-                if y > b {
-                    (x, y)
-                } else {
-                    (a, b)
-                }
-            });
-            let block = self.block_stats.get(&max_block_num).unwrap();
-            eprintln!("Max block size at #{} with {} bytes ({} witness bytes)", max_block_num, block.block_size, block.witness_size);
-        }
+        self.print_statistics_inner("unique accounts touched by contracts", 500000, |v| {
+            let total = v.unique_accounts_touched_by_contracts;
+            if total == 0 {
+                None
+            } else {
+                Some(total)
+            }
+        });
     }
 
     pub fn plot_witness_sizes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
