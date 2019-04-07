@@ -278,10 +278,25 @@ impl ParityStats {
 
     pub fn print_statistics(&self) {
         // Average witness size per block
-        let (count, total)  = self.block_stats.iter().map(|(_, v)| (1, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
-            (a + x, b + y)
-        });
-        eprintln!("Average witness size for {} blocks: {}", count, (total as f64) / (count as f64));
+        {
+            let (count, total)  = self.block_stats.iter().map(|(_, v)| (1, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
+                (a + x, b + y)
+            });
+            eprintln!("Average witness size for {} blocks: {}", count, (total as f64) / (count as f64));
+        }
+
+        {
+            let (max_block_num, _)  = self.block_stats.iter().map(|(k, v)| (*k, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
+                if y > b {
+                    (x, y)
+                } else {
+                    (a, b)
+                }
+            });
+            let block = self.block_stats.get(&max_block_num).unwrap();
+            eprintln!("Max witness size at #{} with {} bytes ({} block bytes)", max_block_num, block.witness_size, block.block_size);
+        }
+
     }
 }
 
