@@ -9,7 +9,7 @@ extern crate csv;
 use std::path::PathBuf;
 use std::collections::{HashMap, BTreeMap};
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufRead};
+use std::io::{BufReader, BufRead, BufWriter};
 
 use structopt::StructOpt;
 use serde::{Serialize, Deserialize};
@@ -111,6 +111,12 @@ struct Opt {
     #[structopt(short = "-i", long="--input", name = "input", parse(from_os_str))]
     input_file: Option<PathBuf>,
 
+    #[structopt(long="--min", name = "min")]
+    min_block_num: Option<usize>,
+
+    #[structopt(long="--max", name = "max")]
+    max_block_num: Option<usize>,
+
     #[structopt(name = "FILE", parse(from_os_str))]
     files: Vec<PathBuf>,
 }
@@ -204,8 +210,17 @@ struct ParityStats {
     block_stats: BTreeMap<usize, BlockStats>,
 }
 
+fn in_range(min_block_num: Option<usize>, max_block_num: Option<usize>, k: usize) -> bool {
+    match (min_block_num, max_block_num) {
+        (Some(min_block_num), Some(max_block_num)) => min_block_num <= k && k <= max_block_num,
+        (Some(min_block_num), None) => min_block_num <= k,
+        (None, Some(max_block_num)) => k <= max_block_num,
+        (None, None) => true
+    }
+}
+
 impl ParityStats {
-    pub fn from_iter<I>(it: I) -> Self where I: Iterator<Item = Option<ParsedLine>> {
+    pub fn from_iter<I>(min_block_num: Option<usize>, max_block_num: Option<usize>, it: I) -> Self where I: Iterator<Item = Option<ParsedLine>> {
         let mut block_stats: BTreeMap<usize, BlockStats> = BTreeMap::new();
         let mut index = 0;
         for i in it {
@@ -214,10 +229,15 @@ impl ParityStats {
                 Some(ref pl) => {
                     match pl {
                         ParsedLine::Witness(block_num, ref w) => {
-                            block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_witness_data(&w);
+                            if in_range(min_block_num, max_block_num, *block_num) {
+                                block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_witness_data(&w);
+                            }
+
                         }
                         ParsedLine::Stats(block_num, ref s) => {
-                            block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_stats_data(&s);
+                            if in_range(min_block_num, max_block_num, *block_num) {
+                                block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_stats_data(&s);
+                            }
                         }
                     }
                 }
@@ -233,8 +253,10 @@ impl ParityStats {
         }
     }
 
-    pub fn merge(&mut self, other: Self) {
-        self.block_stats.extend(other.block_stats.into_iter());
+    pub fn merge(&mut self, min_block_num: Option<usize>, max_block_num: Option<usize>, other: Self) {
+        self.block_stats.extend(other.block_stats.into_iter().filter(|(k, _)| {
+            in_range(min_block_num, max_block_num, *k)
+        }));
     }
 
     pub fn block_intervals(&self) -> Vec<(usize, usize)> {
@@ -262,13 +284,13 @@ fn main() {
     eprintln!("Parsing files: {:?}", opt.files);
     eprintln!("Output file: {:?}", opt.output_file);
     eprintln!("Input file: {:?}", opt.input_file);
-    let mut ps = ParityStats::from_iter(opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
+    let mut ps = ParityStats::from_iter(opt.min_block_num, opt.max_block_num, opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
 
     match opt.input_file {
         Some(input_file) => {
-            let input_file = OpenOptions::new().read(true).open(input_file).expect("Failed to open input file");
+            let input_file = BufReader::new(OpenOptions::new().read(true).open(input_file).expect("Failed to open input file"));
             let input_stats: ParityStats = serde_json::from_reader(input_file).expect("Input file is not valid");
-            ps.merge(input_stats);
+            ps.merge(opt.min_block_num, opt.max_block_num, input_stats);
         }
         None => {}
     }
@@ -277,7 +299,7 @@ fn main() {
 
     match opt.output_file {
         Some(output_file) => {
-            let output_file = OpenOptions::new().create(true).write(true).open(output_file).expect("Failed to open output file");
+            let output_file = BufWriter::new(OpenOptions::new().create(true).write(true).open(output_file).expect("Failed to open output file"));
             serde_json::to_writer(output_file, &ps).expect("Failed to write to output file");
         }
         None => {}
