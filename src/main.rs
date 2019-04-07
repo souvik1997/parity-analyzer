@@ -137,7 +137,7 @@ struct Opt {
     #[structopt(long="--plot-contract-unique-accounts-output", name="plot contract unique accounts output file", parse(from_os_str))]
     plot_contract_unique_accounts_output: Option<PathBuf>,
 
-    #[structopt(long="--plot-on-disk-size", name="plot on disk size output file", parse(from_os_str))]
+    #[structopt(long="--plot-on-disk-size-output", name="plot on disk size output file", parse(from_os_str))]
     plot_on_disk_size_output: Option<PathBuf>,
 
 
