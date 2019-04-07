@@ -381,18 +381,12 @@ impl ParityStats {
         self.print_statistics_inner("witness size", 500000, |v| Some(v.witness_size));
         self.print_statistics_inner("block size", 500000, |v| Some(v.block_size));
         self.print_statistics_inner("on disk size", 500000, |v| v.on_disk_size.map(|s| s as usize));
-        self.print_statistics_inner("db read operations (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.read.ops));
-        self.print_statistics_inner("db read operations (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.read.ops));
-        self.print_statistics_inner("db write operations (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.write.ops));
-        self.print_statistics_inner("db write operations (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.write.ops));
-        self.print_statistics_inner("db delete operations (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.delete.ops));
-        self.print_statistics_inner("db delete operations (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.delete.ops));
-        self.print_statistics_inner("db read bytes (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.read.bytes));
-        self.print_statistics_inner("db read bytes (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.read.bytes));
-        self.print_statistics_inner("db write bytes (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.write.bytes));
-        self.print_statistics_inner("db write bytes (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.write.bytes));
-        self.print_statistics_inner("db delete bytes (above journal cache)", 500000, |v| Some(v.total_db_stats.journal_stats.delete.bytes));
-        self.print_statistics_inner("db delete bytes (below journal cache)", 500000, |v| Some(v.total_db_stats.db_stats.delete.bytes));
+        self.print_statistics_inner("db read operations", 500000, |v| Some(v.total_db_stats.journal_stats.read.ops));
+        self.print_statistics_inner("db write operations", 500000, |v| Some(v.total_db_stats.journal_stats.write.ops));
+        self.print_statistics_inner("db delete operations", 500000, |v| Some(v.total_db_stats.journal_stats.delete.ops));
+        self.print_statistics_inner("db read bytes", 500000, |v| Some(v.total_db_stats.journal_stats.read.bytes));
+        self.print_statistics_inner("db write bytes", 500000, |v| Some(v.total_db_stats.journal_stats.write.bytes));
+        self.print_statistics_inner("db delete bytes", 500000, |v| Some(v.total_db_stats.journal_stats.delete.bytes));
 
         self.print_statistics_inner("unique accounts touched", 500000, |v| {
             let total = v.unique_accounts_touched_by_transfers + v.unique_accounts_touched_by_contracts;
