@@ -137,6 +137,9 @@ struct Opt {
     #[structopt(long="--plot-contract-unique-accounts-output", name="plot contract unique accounts output file", parse(from_os_str))]
     plot_contract_unique_accounts_output: Option<PathBuf>,
 
+    #[structopt(long="--plot-on-disk-size", name="plot on disk size output file", parse(from_os_str))]
+    plot_on_disk_size_output: Option<PathBuf>,
+
 
     #[structopt(name = "FILE", parse(from_os_str))]
     files: Vec<PathBuf>,
@@ -351,6 +354,14 @@ impl ParityStats {
         Self::plot_single_dimension(fg, "Block size (bytes)", "Block size", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.block_size)))
     }
 
+    pub fn plot_on_disk_size<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
+        Self::plot_single_dimension(fg, "On disk size (bytes)", "On disk size", self.block_stats.iter()
+                                    .filter(|c| complete_block_stats(c))
+                                    .map(|(k, v)| (*k, v.on_disk_size))
+                                    .filter(|(_, v)| v.is_some())
+                                    .map(|(k, v)| (k, v.unwrap() as usize)))
+    }
+
     fn plot_single_dimension<'a, I>(fg: &'a mut Figure, y_label: &str, caption_label: &str, it: I) -> &'a mut Figure where I: Iterator<Item = (usize, usize)> + Clone {
         use gnuplot::*;
 
@@ -395,7 +406,7 @@ impl ParityStats {
 
 fn main() {
     let opt = Opt::from_args();
-    eprintln!("Options: {:?}", opt);
+    eprintln!("Options: {:#?}", opt);
     let mut ps = ParityStats::from_iter(opt.min_block_num, opt.max_block_num, opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
 
     match opt.input_file {
@@ -468,6 +479,16 @@ fn main() {
             let mut fg = Figure::new();
             fg.set_terminal(TERMINAL, plot_contract_unique_accounts_output.to_str().unwrap());
             ps.plot_contract_unique_accounts(&mut fg).show();
+            fg.close();
+        }
+        None => {}
+    }
+
+    match opt.plot_on_disk_size_output {
+        Some(plot_on_disk_size_output) => {
+            let mut fg = Figure::new();
+            fg.set_terminal(TERMINAL, plot_on_disk_size_output.to_str().unwrap());
+            ps.plot_on_disk_size(&mut fg).show();
             fg.close();
         }
         None => {}
