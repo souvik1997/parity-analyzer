@@ -344,67 +344,52 @@ impl ParityStats {
     }
 
     pub fn plot_witness_sizes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        use gnuplot::*;
-
-        fg.axes2d()
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.witness_size), &[Caption("Witness size"), Color("black")])
-            .set_x_label("Block number", &[])
-            .set_y_label("Witness size (bytes)", &[]);
-        fg
+        Self::plot_single_dimension(fg, "Witness size (bytes)", "Witness size", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.witness_size)))
     }
 
     pub fn plot_block_sizes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
+        Self::plot_single_dimension(fg, "Block size (bytes)", "Block size", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.block_size)))
+    }
+
+    fn plot_single_dimension<'a, I>(fg: &'a mut Figure, y_label: &str, caption_label: &str, it: I) -> &'a mut Figure where I: Iterator<Item = (usize, usize)> + Clone {
         use gnuplot::*;
 
         fg.axes2d()
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.block_size), &[Caption("Block size"), Color("black")])
+            .points(it.clone().map(|s| s.0), it.map(|s| s.1), &[Caption(caption_label), Color("black")])
             .set_x_label("Block number", &[])
-            .set_y_label("Block size (bytes)", &[]);
+            .set_y_label(y_label, &[]);
+        fg
+    }
+
+    fn plot_database<'a, I>(fg: &'a mut Figure, y_label: &str, it: I) -> &'a mut Figure where I: Iterator<Item = (usize, usize, usize, usize)> + Clone {
+        use gnuplot::*;
+        fg.axes2d()
+            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.1), &[Caption("Reads"), Color("#55FF0000")])
+            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.2), &[Caption("Writes"), Color("#55FF00")])
+            .points(it.clone().map(|s| s.0), it.map(|s| s.3), &[Caption("Deletes"), Color("#550000FF")])
+            .set_x_label("Block number", &[])
+            .set_y_label(y_label, &[]);
         fg
     }
 
     pub fn plot_database_ops<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        use gnuplot::*;
-
-        fg.axes2d()
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.read.ops), &[Caption("Reads"), Color("red")])
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.write.ops), &[Caption("Writes"), Color("blue")])
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.delete.ops), &[Caption("Deletes"), Color("green")])
-            .set_x_label("Block number", &[])
-            .set_y_label("Operations", &[]);
-        fg
+        Self::plot_database(fg, "Operations", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| {
+            (*k, v.total_db_stats.journal_stats.read.ops, v.total_db_stats.journal_stats.write.ops, v.total_db_stats.journal_stats.delete.ops)
+        }))
     }
 
     pub fn plot_database_bytes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        use gnuplot::*;
-
-        fg.axes2d()
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.read.bytes), &[Caption("Reads"), Color("red")])
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.write.bytes), &[Caption("Writes"), Color("blue")])
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.delete.bytes), &[Caption("Deletes"), Color("green")])
-            .set_x_label("Block number", &[])
-            .set_y_label("Bytes", &[]);
-        fg
+        Self::plot_database(fg, "Bytes", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| {
+            (*k, v.total_db_stats.journal_stats.read.bytes, v.total_db_stats.journal_stats.write.bytes, v.total_db_stats.journal_stats.delete.bytes)
+        }))
     }
 
     pub fn plot_transfer_unique_accounts<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        use gnuplot::*;
-
-        fg.axes2d()
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.unique_accounts_touched_by_transfers), &[Caption("Unique accounts touched by transfers"), Color("black")])
-            .set_x_label("Block number", &[])
-            .set_y_label("Number of accounts", &[]);
-        fg
+        Self::plot_single_dimension(fg, "Number of unique accounts", "Number of unique accounts touched by transfers", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.unique_accounts_touched_by_transfers)))
     }
 
     pub fn plot_contract_unique_accounts<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        use gnuplot::*;
-
-        fg.axes2d()
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.unique_accounts_touched_by_contracts), &[Caption("Unique accounts touched by contracts"), Color("black")])
-            .set_x_label("Block number", &[])
-            .set_y_label("Number of accounts", &[]);
-        fg
+        Self::plot_single_dimension(fg, "Number of unique accounts", "Number of unique accounts touched by contracts", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.unique_accounts_touched_by_contracts)))
     }
 }
 
