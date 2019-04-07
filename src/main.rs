@@ -108,6 +108,9 @@ struct Opt {
     #[structopt(short = "-o", long="--output", name = "output", parse(from_os_str))]
     output_file: Option<PathBuf>,
 
+    #[structopt(short = "-i", long="--input", name = "input", parse(from_os_str))]
+    input_file: Option<PathBuf>,
+
     #[structopt(name = "FILE", parse(from_os_str))]
     files: Vec<PathBuf>,
 }
@@ -229,6 +232,27 @@ impl ParityStats {
             block_stats: block_stats
         }
     }
+
+    pub fn merge(&mut self, other: Self) {
+        self.block_stats.extend(other.block_stats.into_iter());
+    }
+
+    pub fn block_intervals(&self) -> Vec<(usize, usize)> {
+        let mut intervals = Vec::new();
+        for (k, _) in &self.block_stats {
+            if intervals.len() == 0 {
+                intervals.push((*k, *k));
+            } else {
+                let l = intervals.last_mut().unwrap();
+                if k - 1 == l.1 {
+                    *l = (l.0, *k);
+                } else {
+                    intervals.push((*k, *k));
+                }
+            }
+        }
+        intervals
+    }
 }
 
 fn main() {
@@ -237,7 +261,19 @@ fn main() {
     dbg!(::std::mem::size_of::<BlockStats>());
     eprintln!("Parsing files: {:?}", opt.files);
     eprintln!("Output file: {:?}", opt.output_file);
-    let ps = ParityStats::from_iter(opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
+    eprintln!("Input file: {:?}", opt.input_file);
+    let mut ps = ParityStats::from_iter(opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
+
+    match opt.input_file {
+        Some(input_file) => {
+            let input_file = OpenOptions::new().read(true).open(input_file).expect("Failed to open input file");
+            let input_stats: ParityStats = serde_json::from_reader(input_file).expect("Input file is not valid");
+            ps.merge(input_stats);
+        }
+        None => {}
+    }
+
+    eprintln!("Block intervals: {:?}", ps.block_intervals());
 
     match opt.output_file {
         Some(output_file) => {
