@@ -275,6 +275,14 @@ impl ParityStats {
         }
         intervals
     }
+
+    pub fn print_statistics(&self) {
+        // Average witness size per block
+        let (count, total)  = self.block_stats.iter().map(|(_, v)| (1, v.witness_size)).fold((0, 0), |(a, b), (x, y)| {
+            (a + x, b + y)
+        });
+        eprintln!("Average witness size for {} blocks: {}", count, (total as f64) / (count as f64));
+    }
 }
 
 fn main() {
@@ -296,6 +304,7 @@ fn main() {
     }
 
     eprintln!("Block intervals: {:?}", ps.block_intervals());
+    ps.print_statistics();
 
     match opt.output_file {
         Some(output_file) => {
