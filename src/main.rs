@@ -315,7 +315,7 @@ impl ParityStats {
         use gnuplot::*;
 
         fg.axes2d()
-            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.witness_size), &[Caption("Witness size"), Color("black"), PointSymbol('.')])
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.witness_size), &[Caption("Witness size"), Color("black")])
             .set_x_label("Block number", &[])
             .set_y_label("Witness size (bytes)", &[]);
         fg
