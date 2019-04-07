@@ -119,11 +119,23 @@ struct Opt {
     #[structopt(long="--max", name = "max")]
     max_block_num: Option<usize>,
 
-    #[structopt(long="--gnuplot-terminal", name="gnuplot terminal")]
-    gnuplot_terminal: Option<String>,
+    #[structopt(long="--plot-witness-size-output", name="plot witness size output file", parse(from_os_str))]
+    plot_witness_size_output: Option<PathBuf>,
 
-    #[structopt(long="--gnuplot-output-file", name="gnuplot output file", parse(from_os_str))]
-    gnuplot_output_file: Option<PathBuf>,
+    #[structopt(long="--plot-block-size-output", name="plot block size output file", parse(from_os_str))]
+    plot_block_size_output: Option<PathBuf>,
+
+    #[structopt(long="--plot-db-ops-output", name="plot db ops output file", parse(from_os_str))]
+    plot_db_ops_output: Option<PathBuf>,
+
+    #[structopt(long="--plot-db-bytes-output", name="plot db bytes output file", parse(from_os_str))]
+    plot_db_bytes_output: Option<PathBuf>,
+
+    #[structopt(long="--plot-transfer-unique-accounts-output", name="plot transfer unique accounts output file", parse(from_os_str))]
+    plot_transfer_unique_accounts_output: Option<PathBuf>,
+
+    #[structopt(long="--plot-contract-unique-accounts-output", name="plot contract unique accounts output file", parse(from_os_str))]
+    plot_contract_unique_accounts_output: Option<PathBuf>,
 
 
     #[structopt(name = "FILE", parse(from_os_str))]
@@ -320,6 +332,60 @@ impl ParityStats {
             .set_y_label("Witness size (bytes)", &[]);
         fg
     }
+
+    pub fn plot_block_sizes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
+        use gnuplot::*;
+
+        fg.axes2d()
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.block_size), &[Caption("Block size"), Color("black")])
+            .set_x_label("Block number", &[])
+            .set_y_label("Block size (bytes)", &[]);
+        fg
+    }
+
+    pub fn plot_database_ops<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
+        use gnuplot::*;
+
+        fg.axes2d()
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.read.ops), &[Caption("Reads"), Color("red")])
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.write.ops), &[Caption("Writes"), Color("blue")])
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.delete.ops), &[Caption("Deletes"), Color("green")])
+            .set_x_label("Block number", &[])
+            .set_y_label("Operations", &[]);
+        fg
+    }
+
+    pub fn plot_database_bytes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
+        use gnuplot::*;
+
+        fg.axes2d()
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.read.bytes), &[Caption("Reads"), Color("red")])
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.write.bytes), &[Caption("Writes"), Color("blue")])
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.total_db_stats.journal_stats.delete.bytes), &[Caption("Deletes"), Color("green")])
+            .set_x_label("Block number", &[])
+            .set_y_label("Bytes", &[]);
+        fg
+    }
+
+    pub fn plot_transfer_unique_accounts<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
+        use gnuplot::*;
+
+        fg.axes2d()
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.unique_accounts_touched_by_transfers), &[Caption("Unique accounts touched by transfers"), Color("black")])
+            .set_x_label("Block number", &[])
+            .set_y_label("Number of accounts", &[]);
+        fg
+    }
+
+    pub fn plot_contract_unique_accounts<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
+        use gnuplot::*;
+
+        fg.axes2d()
+            .points(self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, _)| *k), self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(_, v)| v.unique_accounts_touched_by_contracts), &[Caption("Unique accounts touched by contracts"), Color("black")])
+            .set_x_label("Block number", &[])
+            .set_y_label("Number of accounts", &[]);
+        fg
+    }
 }
 
 fn main() {
@@ -339,22 +405,68 @@ fn main() {
     eprintln!("Block intervals: {:?}", ps.block_intervals());
     ps.print_statistics();
 
-    match opt.gnuplot_terminal {
-        Some(gnuplot_terminal) => {
-            if gnuplot_terminal != "wxt" {
-                assert!(opt.gnuplot_output_file.is_some());
-            }
+    const TERMINAL: &str = "pngcairo size 1000, 1000";
+
+    match opt.plot_witness_size_output {
+        Some(plot_witness_size_output) => {
             let mut fg = Figure::new();
-            fg.set_terminal(&gnuplot_terminal, &opt.gnuplot_output_file.clone().map(|s| s.to_str().unwrap().to_owned()).unwrap_or("".to_owned()));
+            fg.set_terminal(TERMINAL, plot_witness_size_output.to_str().unwrap());
             ps.plot_witness_sizes(&mut fg).show();
-            if gnuplot_terminal != "wxt" {
-                fg.close();
-            }
+            fg.close();
         }
         None => {}
     }
 
 
+    match opt.plot_block_size_output {
+        Some(plot_block_size_output) => {
+            let mut fg = Figure::new();
+            fg.set_terminal(TERMINAL, plot_block_size_output.to_str().unwrap());
+            ps.plot_block_sizes(&mut fg).show();
+            fg.close();
+        }
+        None => {}
+    }
+
+    match opt.plot_db_ops_output {
+        Some(plot_db_ops_output) => {
+            let mut fg = Figure::new();
+            fg.set_terminal(TERMINAL, plot_db_ops_output.to_str().unwrap());
+            ps.plot_database_ops(&mut fg).show();
+            fg.close();
+        }
+        None => {}
+    }
+
+    match opt.plot_db_bytes_output {
+        Some(plot_db_bytes_output) => {
+            let mut fg = Figure::new();
+            fg.set_terminal(TERMINAL, plot_db_bytes_output.to_str().unwrap());
+            ps.plot_database_bytes(&mut fg).show();
+            fg.close();
+        }
+        None => {}
+    }
+
+    match opt.plot_transfer_unique_accounts_output {
+        Some(plot_transfer_unique_accounts_output) => {
+            let mut fg = Figure::new();
+            fg.set_terminal(TERMINAL, plot_transfer_unique_accounts_output.to_str().unwrap());
+            ps.plot_transfer_unique_accounts(&mut fg).show();
+            fg.close();
+        }
+        None => {}
+    }
+
+    match opt.plot_contract_unique_accounts_output {
+        Some(plot_contract_unique_accounts_output) => {
+            let mut fg = Figure::new();
+            fg.set_terminal(TERMINAL, plot_contract_unique_accounts_output.to_str().unwrap());
+            ps.plot_contract_unique_accounts(&mut fg).show();
+            fg.close();
+        }
+        None => {}
+    }
 
     match opt.output_file {
         Some(output_file) => {
