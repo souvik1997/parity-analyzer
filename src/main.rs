@@ -387,8 +387,8 @@ impl ParityStats {
                 None
             }
         });
-        self.print_statistics_inner("block size", 500000, |v| Some(v.block_size));
-        self.print_statistics_inner("on disk size", 500000, |v| v.on_disk_size.map(|s| s as usize));
+        self.print_statistics_inner("block size (bytes)", 500000, |v| Some(v.block_size));
+        self.print_statistics_inner("on disk size (bytes)", 500000, |v| v.on_disk_size.map(|s| s as usize));
         self.print_statistics_inner("db read operations", 500000, |v| Some(v.total_db_stats.journal_stats.read.ops));
         self.print_statistics_inner("db write operations", 500000, |v| Some(v.total_db_stats.journal_stats.write.ops));
         self.print_statistics_inner("db delete operations", 500000, |v| Some(v.total_db_stats.journal_stats.delete.ops));
@@ -549,21 +549,42 @@ impl ParityStats {
             }
         });
 
-        self.print_statistics_inner("unique accounts touched by transfers", 500000, |v| {
+        self.print_statistics_inner("unique accounts touched / transaction", 500000, |v| {
+            let total = v.unique_accounts_touched_by_transfers + v.unique_accounts_touched_by_contracts;
+            if total == 0 {
+                None
+            } else {
+                if v.num_transfers + v.num_contracts > 0 {
+                    Some(total / (v.num_transfers + v.num_contracts))
+                } else {
+                    None
+                }
+            }
+        });
+
+        self.print_statistics_inner("unique accounts touched / transfer", 500000, |v| {
             let total = v.unique_accounts_touched_by_transfers;
             if total == 0 {
                 None
             } else {
-                Some(total)
+                if v.num_transfers > 0 {
+                    Some(total / v.num_transfers)
+                } else {
+                    None
+                }
             }
         });
 
-        self.print_statistics_inner("unique accounts touched by contracts", 500000, |v| {
+        self.print_statistics_inner("unique accounts touched / contract", 500000, |v| {
             let total = v.unique_accounts_touched_by_contracts;
             if total == 0 {
                 None
             } else {
-                Some(total)
+                if v.num_contracts > 0 {
+                    Some(total / v.num_contracts)
+                } else {
+                    None
+                }
             }
         });
     }
