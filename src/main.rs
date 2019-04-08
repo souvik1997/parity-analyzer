@@ -379,6 +379,11 @@ impl ParityStats {
 
     pub fn print_statistics(&self) {
         self.print_statistics_inner("witness size", 500000, |v| Some(v.witness_size));
+        self.print_statistics_inner("witness size / transactions", 500000, |v| {
+            Some(
+                v.witness_size / (v.num_transfers + v.num_contracts)
+            );
+        });
         self.print_statistics_inner("block size", 500000, |v| Some(v.block_size));
         self.print_statistics_inner("on disk size", 500000, |v| v.on_disk_size.map(|s| s as usize));
         self.print_statistics_inner("db read operations", 500000, |v| Some(v.total_db_stats.journal_stats.read.ops));
