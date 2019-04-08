@@ -373,7 +373,7 @@ impl ParityStats {
                 });
 
             let block = self.block_stats.get(&max_block_num).unwrap();
-            eprintln!(" - max {} at #{}", f(block).unwrap(), max_block_num);
+            eprintln!(" - max {} at block #{}", f(block).unwrap(), max_block_num);
             start += interval;
         }
     }
