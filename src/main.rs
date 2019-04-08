@@ -6,11 +6,13 @@ extern crate rayon;
 extern crate derive_more;
 extern crate csv;
 extern crate gnuplot;
+extern crate flate2;
 
 use std::path::PathBuf;
 use std::collections::{HashMap, BTreeMap};
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufRead, BufWriter};
+use std::io::{BufReader, BufRead, Read, BufWriter};
+use flate2::read::GzDecoder;
 use gnuplot::Figure;
 
 use structopt::StructOpt;
@@ -650,7 +652,18 @@ impl ParityStats {
 fn main() {
     let opt = Opt::from_args();
     eprintln!("Options: {:#?}", opt);
-    let mut ps = ParityStats::from_iter(opt.min_block_num, opt.max_block_num, opt.files.iter().flat_map(|f| BufReader::new(File::open(f).unwrap()).lines().map(|line| parse_line(&line.unwrap()))));
+    let mut ps = ParityStats::from_iter(opt.min_block_num, opt.max_block_num, opt.files.iter().flat_map(|f| {
+
+        let reader: Box<dyn Read> = {
+            if f.extension().unwrap().to_str().unwrap() == "gz" {
+                Box::new(GzDecoder::new(File::open(f).unwrap()))
+            } else {
+                Box::new(File::open(f).unwrap())
+            }
+        };
+
+        BufReader::new(reader).lines().map(|line| parse_line(&line.unwrap()))
+    } ));
 
     match opt.input_file {
         Some(input_file) => {
