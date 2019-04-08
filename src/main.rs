@@ -380,7 +380,7 @@ impl ParityStats {
     pub fn print_statistics(&self) {
         self.print_statistics_inner("witness size", 500000, |v| Some(v.witness_size));
         self.print_statistics_inner("witness size / transactions", 500000, |v| {
-            if v.num_transfers + v.num_contracts >= 0 {
+            if v.num_transfers + v.num_contracts > 0 {
                 Some(v.witness_size / (v.num_transfers + v.num_contracts))
             } else {
                 None
