@@ -305,6 +305,7 @@ impl ParityStats {
     }
 
     fn print_statistics_inner<F, G>(&self, name: &str, interval: usize, mut f: F) where F: FnMut(&BlockStats) -> Option<G>, G: Default + PartialOrd + ::std::fmt::Display + ::std::ops::Add<G, Output = G> + Into<usize> {
+        eprintln!("");
         eprintln!("{}", name);
 
         let (count, total)  = self.block_stats.iter()
@@ -394,6 +395,150 @@ impl ParityStats {
         self.print_statistics_inner("db read bytes", 500000, |v| Some(v.total_db_stats.journal_stats.read.bytes));
         self.print_statistics_inner("db write bytes", 500000, |v| Some(v.total_db_stats.journal_stats.write.bytes));
         self.print_statistics_inner("db delete bytes", 500000, |v| Some(v.total_db_stats.journal_stats.delete.bytes));
+
+        self.print_statistics_inner("db read operations / transaction", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.read.ops + v.total_contract_db_stats.journal_stats.read.ops) / (v.num_transfers + v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db write operations / transaction", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.write.ops + v.total_contract_db_stats.journal_stats.write.ops) / (v.num_transfers + v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db delete operations / transaction", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.delete.ops + v.total_contract_db_stats.journal_stats.delete.ops) / (v.num_transfers + v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db read operations / transfer", 500000, |v| {
+            if v.num_transfers > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.read.ops) / (v.num_transfers))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db write operations / transfer", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.write.ops) / (v.num_transfers))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db delete operations / transfer", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.delete.ops) / (v.num_transfers))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db read operations / contract", 500000, |v| {
+            if v.num_contracts > 0 {
+                Some((v.total_contract_db_stats.journal_stats.read.ops) / (v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db write operations / contract", 500000, |v| {
+            if v.num_contracts + v.num_contracts > 0 {
+                Some((v.total_contract_db_stats.journal_stats.write.ops) / (v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db delete operations / contract", 500000, |v| {
+            if v.num_contracts + v.num_contracts > 0 {
+                Some((v.total_contract_db_stats.journal_stats.delete.ops) / (v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db read bytes / transaction", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.read.bytes + v.total_contract_db_stats.journal_stats.read.bytes) / (v.num_transfers + v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db write bytes / transaction", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.write.bytes + v.total_contract_db_stats.journal_stats.write.bytes) / (v.num_transfers + v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db delete bytes / transaction", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.delete.bytes + v.total_contract_db_stats.journal_stats.delete.bytes) / (v.num_transfers + v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db read bytes / transfer", 500000, |v| {
+            if v.num_transfers > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.read.bytes) / (v.num_transfers))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db write bytes / transfer", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.write.bytes) / (v.num_transfers))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db delete bytes / transfer", 500000, |v| {
+            if v.num_transfers + v.num_contracts > 0 {
+                Some((v.total_transfer_db_stats.journal_stats.delete.bytes) / (v.num_transfers))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db read bytes / contract", 500000, |v| {
+            if v.num_contracts > 0 {
+                Some((v.total_contract_db_stats.journal_stats.read.bytes) / (v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db write bytes / contract", 500000, |v| {
+            if v.num_contracts + v.num_contracts > 0 {
+                Some((v.total_contract_db_stats.journal_stats.write.bytes) / (v.num_contracts))
+            } else {
+                None
+            }
+        });
+
+        self.print_statistics_inner("db delete bytes / contract", 500000, |v| {
+            if v.num_contracts + v.num_contracts > 0 {
+                Some((v.total_contract_db_stats.journal_stats.delete.bytes) / (v.num_contracts))
+            } else {
+                None
+            }
+        });
 
         self.print_statistics_inner("unique accounts touched", 500000, |v| {
             let total = v.unique_accounts_touched_by_transfers + v.unique_accounts_touched_by_contracts;
