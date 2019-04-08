@@ -429,7 +429,7 @@ impl ParityStats {
         });
 
         self.print_statistics_inner("db write operations / transfer", 500000, |v| {
-            if v.num_transfers + v.num_contracts > 0 {
+            if v.num_transfers > 0 {
                 Some((v.total_transfer_db_stats.journal_stats.write.ops) / (v.num_transfers))
             } else {
                 None
@@ -437,7 +437,7 @@ impl ParityStats {
         });
 
         self.print_statistics_inner("db delete operations / transfer", 500000, |v| {
-            if v.num_transfers + v.num_contracts > 0 {
+            if v.num_transfers > 0 {
                 Some((v.total_transfer_db_stats.journal_stats.delete.ops) / (v.num_transfers))
             } else {
                 None
@@ -453,7 +453,7 @@ impl ParityStats {
         });
 
         self.print_statistics_inner("db write operations / contract", 500000, |v| {
-            if v.num_contracts + v.num_contracts > 0 {
+            if v.num_contracts > 0 {
                 Some((v.total_contract_db_stats.journal_stats.write.ops) / (v.num_contracts))
             } else {
                 None
@@ -461,7 +461,7 @@ impl ParityStats {
         });
 
         self.print_statistics_inner("db delete operations / contract", 500000, |v| {
-            if v.num_contracts + v.num_contracts > 0 {
+            if v.num_contracts > 0 {
                 Some((v.total_contract_db_stats.journal_stats.delete.ops) / (v.num_contracts))
             } else {
                 None
