@@ -620,10 +620,11 @@ impl ParityStats {
     fn plot_database<'a, I>(fg: &'a mut Figure, y_label: &str, it: I) -> &'a mut Figure where I: Iterator<Item = (usize, usize, usize, usize)> + Clone {
         use gnuplot::*;
         fg.axes2d()
-            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.1), &[Caption("Reads"), Color("#55FF0000")])
-            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.2), &[Caption("Writes"), Color("#55FF00")])
-            .points(it.clone().map(|s| s.0), it.map(|s| s.3), &[Caption("Deletes"), Color("#550000FF")])
+            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.1), &[Caption("Reads"), Color("#11FF0000")])
+            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.2), &[Caption("Writes"), Color("#1100FF00")])
+            .points(it.clone().map(|s| s.0), it.map(|s| s.3), &[Caption("Deletes"), Color("#110000FF")])
             .set_x_label("Block number", &[])
+            .set_x_ticks(None, &[TickOption::Format("#%.0f")], &[])
             .set_y_label(y_label, &[]);
         fg
     }
@@ -635,8 +636,8 @@ impl ParityStats {
     }
 
     pub fn plot_database_bytes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        Self::plot_database(fg, "Bytes", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| {
-            (*k, v.total_db_stats.journal_stats.read.bytes, v.total_db_stats.journal_stats.write.bytes, v.total_db_stats.journal_stats.delete.bytes)
+        Self::plot_database(fg, "KiB", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| {
+            (*k, v.total_db_stats.journal_stats.read.bytes / 1024, v.total_db_stats.journal_stats.write.bytes / 1024, v.total_db_stats.journal_stats.delete.bytes / 1024)
         }))
     }
 
