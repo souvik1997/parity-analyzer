@@ -8,7 +8,7 @@ extern crate csv;
 extern crate gnuplot;
 extern crate flate2;
 
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::collections::{HashMap, BTreeMap};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufRead, Read, BufWriter};
@@ -141,6 +141,18 @@ struct Opt {
 
     #[structopt(long="--plot-on-disk-size-output", name="plot on disk size output file", parse(from_os_str))]
     plot_on_disk_size_output: Option<PathBuf>,
+
+    #[structopt(long="--dump-witness-sizes", name="dump witness size output file", parse(from_os_str))]
+    dump_witness_size_output: Option<PathBuf>,
+
+    #[structopt(long="--dump-block-sizes", name="dump block size output file", parse(from_os_str))]
+    dump_block_size_output: Option<PathBuf>,
+
+    #[structopt(long="--dump-db-bytes", name="dump db bytes output file", parse(from_os_str))]
+    dump_db_bytes_output: Option<PathBuf>,
+
+    #[structopt(long="--dump-db-ops", name="dump db ops output file", parse(from_os_str))]
+    dump_db_ops_output: Option<PathBuf>,
 
 
     #[structopt(name = "FILE", parse(from_os_str))]
@@ -592,11 +604,11 @@ impl ParityStats {
     }
 
     pub fn plot_witness_sizes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        Self::plot_single_dimension(fg, "Witness size (bytes)", "Witness size", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.witness_size)))
+        Self::plot_single_dimension(fg, "Witness size (bytes)", "Witness size", self.block_stats.iter().filter(|c| c.1.added_witness_data).map(|(k, v)| (*k, v.witness_size)))
     }
 
     pub fn plot_block_sizes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        Self::plot_single_dimension(fg, "Block size (bytes)", "Block size", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.block_size)))
+        Self::plot_single_dimension(fg, "Block size (bytes)", "Block size", self.block_stats.iter().filter(|c| c.1.added_witness_data).map(|(k, v)| (*k, v.block_size)))
     }
 
     pub fn plot_on_disk_size<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
@@ -620,33 +632,59 @@ impl ParityStats {
     fn plot_database<'a, I>(fg: &'a mut Figure, y_label: &str, it: I) -> &'a mut Figure where I: Iterator<Item = (usize, usize, usize, usize)> + Clone {
         use gnuplot::*;
         fg.axes2d()
-            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.1), &[Caption("Reads"), Color("#11FF0000")])
-            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.2), &[Caption("Writes"), Color("#1100FF00")])
-            .points(it.clone().map(|s| s.0), it.map(|s| s.3), &[Caption("Deletes"), Color("#110000FF")])
+            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.1), &[Caption("Reads"), Color("#00FF0000"), PointSize(0.2)])
+            .points(it.clone().map(|s| s.0), it.clone().map(|s| s.2), &[Caption("Writes"), Color("#0000FF00"), PointSize(0.2)])
+            .points(it.clone().map(|s| s.0), it.map(|s| s.3), &[Caption("Deletes"), Color("#000000FF"), PointSize(0.2)])
             .set_x_label("Block number", &[])
-            .set_x_ticks(None, &[TickOption::Format("#%.0f")], &[])
+            .set_x_ticks(Some((AutoOption::Auto, 10)), &[TickOption::Format("#.0f")], &[])
             .set_y_label(y_label, &[]);
         fg
     }
 
     pub fn plot_database_ops<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        Self::plot_database(fg, "Operations", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| {
+        Self::plot_database(fg, "Operations", self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| {
             (*k, v.total_db_stats.journal_stats.read.ops, v.total_db_stats.journal_stats.write.ops, v.total_db_stats.journal_stats.delete.ops)
         }))
     }
 
     pub fn plot_database_bytes<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        Self::plot_database(fg, "KiB", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| {
+        Self::plot_database(fg, "KiB", self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| {
             (*k, v.total_db_stats.journal_stats.read.bytes / 1024, v.total_db_stats.journal_stats.write.bytes / 1024, v.total_db_stats.journal_stats.delete.bytes / 1024)
         }))
     }
 
     pub fn plot_transfer_unique_accounts<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        Self::plot_single_dimension(fg, "Number of unique accounts", "Number of unique accounts touched by transfers", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.unique_accounts_touched_by_transfers)))
+        Self::plot_single_dimension(fg, "Number of unique accounts", "Number of unique accounts touched by transfers", self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| (*k, v.unique_accounts_touched_by_transfers)))
     }
 
     pub fn plot_contract_unique_accounts<'a>(&self, fg: &'a mut Figure) -> &'a mut Figure {
-        Self::plot_single_dimension(fg, "Number of unique accounts", "Number of unique accounts touched by contracts", self.block_stats.iter().filter(|c| complete_block_stats(c)).map(|(k, v)| (*k, v.unique_accounts_touched_by_contracts)))
+        Self::plot_single_dimension(fg, "Number of unique accounts", "Number of unique accounts touched by contracts", self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| (*k, v.unique_accounts_touched_by_contracts)))
+    }
+
+    pub fn dump_witness_size(&self, path: &Path) {
+        let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_witness_data).map(|(k, v)| (*k, v.witness_size)).collect();
+        serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
+    }
+
+    pub fn dump_block_size(&self, path: &Path) {
+        let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_witness_data).map(|(k, v)| (*k, v.block_size)).collect();
+        serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
+    }
+
+    pub fn dump_db_bytes(&self, path: &Path) {
+        let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| (*k,
+                                                                                                 v.total_db_stats.journal_stats.read.bytes,
+                                                                                                 v.total_db_stats.journal_stats.write.bytes,
+                                                                                                 v.total_db_stats.journal_stats.delete.bytes)).collect();
+        serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
+    }
+
+    pub fn dump_db_ops(&self, path: &Path) {
+        let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| (*k,
+                                                                                                 v.total_db_stats.journal_stats.read.ops,
+                                                                                                 v.total_db_stats.journal_stats.write.ops,
+                                                                                                 v.total_db_stats.journal_stats.delete.ops)).collect();
+        serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
     }
 }
 
@@ -676,7 +714,7 @@ fn main() {
     }
 
     eprintln!("Block intervals: {:?}", ps.block_intervals());
-    ps.print_statistics();
+    // ps.print_statistics();
 
     const TERMINAL: &str = "pngcairo size 1000, 1000";
 
@@ -751,6 +789,34 @@ fn main() {
         None => {}
     }
 
+    match opt.dump_witness_size_output {
+        Some(dump_witness_size_output) => {
+            ps.dump_witness_size(&dump_witness_size_output);
+        }
+        None => {}
+    }
+
+    match opt.dump_block_size_output {
+        Some(dump_block_size_output) => {
+            ps.dump_block_size(&dump_block_size_output);
+        }
+        None => {}
+    }
+
+    match opt.dump_db_bytes_output {
+        Some(dump_db_bytes_output) => {
+            ps.dump_db_bytes(&dump_db_bytes_output);
+        }
+        None => {}
+    }
+
+    match opt.dump_db_ops_output {
+        Some(dump_db_ops_output) => {
+            ps.dump_db_ops(&dump_db_ops_output);
+        }
+        None => {}
+    }
+
     match opt.output_file {
         Some(output_file) => {
             let output_file = BufWriter::new(OpenOptions::new().create(true).write(true).open(output_file).expect("Failed to open output file"));
@@ -758,4 +824,5 @@ fn main() {
         }
         None => {}
     }
+
 }
