@@ -7,6 +7,7 @@ extern crate derive_more;
 extern crate csv;
 extern crate gnuplot;
 extern crate flate2;
+extern crate chrono;
 
 use std::path::{PathBuf, Path};
 use std::collections::{HashMap, BTreeMap};
@@ -14,6 +15,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufRead, Read, BufWriter};
 use flate2::read::GzDecoder;
 use gnuplot::Figure;
+use chrono::NaiveDateTime;
 
 use structopt::StructOpt;
 use serde::{Serialize, Deserialize};
@@ -72,7 +74,8 @@ struct WitnessRecord {
 #[derive(Clone, Eq, Debug, PartialEq)]
 enum ParsedLine {
     Witness(usize, WitnessRecord),
-    Stats(usize, StatsRecord)
+    Stats(usize, NaiveDateTime, StatsRecord),
+    NewFile
 }
 
 fn parse_line(line: &str) -> Option<ParsedLine> {
@@ -93,12 +96,15 @@ fn parse_line(line: &str) -> Option<ParsedLine> {
         let block_bytes: usize = block_bytes_part[..block_bytes_sep_index].parse().unwrap();
         Some(ParsedLine::Witness(block_num, WitnessRecord { bytes: bytes, block_bytes: block_bytes }))
     } else if let Some(index) = line.find("TRACE stats  RECORD") {
+        let date_end_index = line.find("  ").unwrap();
+        let date_part = &line[..date_end_index];
+        let date = NaiveDateTime::parse_from_str(date_part, "%Y-%m-%d %H:%M:%S").expect("date string should be well-formed");
         let line_part = &line[(index + 27)..];
         let first_space_index = line_part.find(" ").unwrap();
         let block_num: usize = line_part[..first_space_index].parse().unwrap();
         let stats_part = &line_part[(first_space_index + 12)..];
         let stats: StatsRecord = serde_json::from_str(stats_part).unwrap();
-        Some(ParsedLine::Stats(block_num, stats))
+        Some(ParsedLine::Stats(block_num, date, stats))
     } else {
         None
     }
@@ -154,6 +160,9 @@ struct Opt {
     #[structopt(long="--dump-db-ops", name="dump db ops output file", parse(from_os_str))]
     dump_db_ops_output: Option<PathBuf>,
 
+    #[structopt(long="--dump-on-disk-size", name="dump on disk size output file", parse(from_os_str))]
+    dump_on_disk_size_output: Option<PathBuf>,
+
 
     #[structopt(name = "FILE", parse(from_os_str))]
     files: Vec<PathBuf>,
@@ -172,6 +181,7 @@ struct BlockStats {
     pub total_contract_db_stats: UnifiedStats,
     pub total_db_stats: UnifiedStats,
     pub on_disk_size: Option<u64>,
+    pub elapsed_millis: Option<i64>,
     pub added_witness_data: bool,
     pub added_stats_data: bool,
 }
@@ -190,6 +200,7 @@ impl BlockStats {
             total_contract_db_stats: UnifiedStats::default(),
             total_db_stats: UnifiedStats::default(),
             on_disk_size: None,
+            elapsed_millis: None,
             added_witness_data: false,
             added_stats_data: false,
         }
@@ -204,7 +215,7 @@ impl BlockStats {
         self.added_witness_data = true;
     }
 
-    fn add_stats_data(&mut self, s: &StatsRecord) {
+    fn add_stats_data(&mut self, s: &StatsRecord, elapsed_millis: Option<i64>) {
         if self.added_stats_data {
             return;
         }
@@ -239,6 +250,7 @@ impl BlockStats {
         self.total_contract_db_stats = total_contract_db_stats;
         self.total_db_stats = s.final_stats - s.initial_stats;
         self.on_disk_size = s.on_disk_size;
+        self.elapsed_millis = elapsed_millis;
         self.added_stats_data = true;
     }
 }
@@ -265,6 +277,7 @@ impl ParityStats {
     pub fn from_iter<I>(min_block_num: Option<usize>, max_block_num: Option<usize>, it: I) -> Self where I: Iterator<Item = Option<ParsedLine>> {
         let mut block_stats: BTreeMap<usize, BlockStats> = BTreeMap::new();
         let mut index = 0;
+        let mut last_date_time: Option<NaiveDateTime> = None;
         for i in it {
             match i {
                 None => {}
@@ -274,12 +287,25 @@ impl ParityStats {
                             if in_range(min_block_num, max_block_num, *block_num) {
                                 block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_witness_data(&w);
                             }
-
                         }
-                        ParsedLine::Stats(block_num, ref s) => {
+                        ParsedLine::Stats(block_num, ref datetime, ref s) => {
                             if in_range(min_block_num, max_block_num, *block_num) {
-                                block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_stats_data(&s);
+                                let timedelta = match last_date_time {
+                                    Some(last_date_time) => {
+                                        let last_date_time_millis = last_date_time.timestamp_millis();
+                                        let date_time_millis = datetime.timestamp_millis();
+                                        Some(date_time_millis - last_date_time_millis)
+                                    }
+                                    None => {
+                                        last_date_time = Some(*datetime);
+                                        None
+                                    }
+                                };
+                                block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_stats_data(&s, timedelta);
                             }
+                        }
+                        ParsedLine::NewFile => {
+                            last_date_time = None
                         }
                     }
                 }
@@ -328,8 +354,8 @@ impl ParityStats {
             .filter(|v| v.1.is_some())
             .map(|(k, v)| (k, v.unwrap()))
             .fold((0, G::default()), |(a, b), (x, y)| {
-            (a + x, b + y)
-        });
+                (a + x, b + y)
+            });
         let total_usize: usize = total.into();
         eprintln!("- average {}", (total_usize as f64) / (count as f64));
 
@@ -339,12 +365,12 @@ impl ParityStats {
             .filter(|v| v.1.is_some())
             .map(|(k, v)| (k, v.unwrap()))
             .fold((0, G::default()), |(a, b), (x, y)| {
-            if y >= b {
-                (x, y)
-            } else {
-                (a, b)
-            }
-        });
+                if y >= b {
+                    (x, y)
+                } else {
+                    (a, b)
+                }
+            });
         let block = self.block_stats.get(&max_block_num).unwrap();
         eprintln!("- max {} at block #{}", f(block).unwrap(), max_block_num);
 
@@ -673,19 +699,30 @@ impl ParityStats {
 
     pub fn dump_db_bytes(&self, path: &Path) {
         let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| (*k,
-                                                                                                 v.total_db_stats.journal_stats.read.bytes,
-                                                                                                 v.total_db_stats.journal_stats.write.bytes,
-                                                                                                 v.total_db_stats.journal_stats.delete.bytes)).collect();
+                                                                                               v.elapsed_millis,
+                                                                                               v.total_db_stats.journal_stats.read.bytes,
+                                                                                               v.total_db_stats.journal_stats.write.bytes,
+                                                                                               v.total_db_stats.journal_stats.delete.bytes)).collect();
         serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
     }
 
     pub fn dump_db_ops(&self, path: &Path) {
         let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| (*k,
-                                                                                                 v.total_db_stats.journal_stats.read.ops,
-                                                                                                 v.total_db_stats.journal_stats.write.ops,
-                                                                                                 v.total_db_stats.journal_stats.delete.ops)).collect();
+                                                                                               v.elapsed_millis,
+                                                                                               v.total_db_stats.journal_stats.read.ops,
+                                                                                               v.total_db_stats.journal_stats.write.ops,
+                                                                                               v.total_db_stats.journal_stats.delete.ops)).collect();
         serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
     }
+
+    pub fn dump_on_disk_size(&self, path: &Path) {
+        let d: Vec<_> = self.block_stats.iter()
+            .filter(|c| c.1.added_stats_data)
+            .filter(|c| c.1.on_disk_size.is_some())
+            .map(|(k, v)| (*k, v.on_disk_size.unwrap())).collect();
+        serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
+    }
+
 }
 
 fn main() {
@@ -701,7 +738,7 @@ fn main() {
             }
         };
 
-        BufReader::new(reader).lines().map(|line| parse_line(&line.unwrap()))
+        ::std::iter::once(Some(ParsedLine::NewFile)).chain(BufReader::new(reader).lines().map(|line| parse_line(&line.unwrap())))
     } ));
 
     match opt.input_file {
@@ -813,6 +850,13 @@ fn main() {
     match opt.dump_db_ops_output {
         Some(dump_db_ops_output) => {
             ps.dump_db_ops(&dump_db_ops_output);
+        }
+        None => {}
+    }
+
+    match opt.dump_on_disk_size_output {
+        Some(dump_on_disk_size_output) => {
+            ps.dump_on_disk_size(&dump_on_disk_size_output);
         }
         None => {}
     }
