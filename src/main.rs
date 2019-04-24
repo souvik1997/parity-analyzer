@@ -157,8 +157,14 @@ struct Opt {
     #[structopt(long="--dump-db-bytes", name="dump db bytes output file", parse(from_os_str))]
     dump_db_bytes_output: Option<PathBuf>,
 
+    #[structopt(long="--dump-db-bytes-chunk-size", name="dump db bytes chunk size")]
+    dump_db_bytes_chunk_size: Option<usize>,
+
     #[structopt(long="--dump-db-ops", name="dump db ops output file", parse(from_os_str))]
     dump_db_ops_output: Option<PathBuf>,
+
+    #[structopt(long="--dump-db-ops-chunk-size", name="dump db ops chunk size")]
+    dump_db_ops_chunk_size: Option<usize>,
 
     #[structopt(long="--dump-on-disk-size", name="dump on disk size output file", parse(from_os_str))]
     dump_on_disk_size_output: Option<PathBuf>,
@@ -181,7 +187,8 @@ struct BlockStats {
     pub total_contract_db_stats: UnifiedStats,
     pub total_db_stats: UnifiedStats,
     pub on_disk_size: Option<u64>,
-    pub elapsed_millis: Option<i64>,
+    pub start_timestamp_millis: Option<i64>,
+    pub end_timestamp_millis: i64,
     pub added_witness_data: bool,
     pub added_stats_data: bool,
 }
@@ -200,7 +207,8 @@ impl BlockStats {
             total_contract_db_stats: UnifiedStats::default(),
             total_db_stats: UnifiedStats::default(),
             on_disk_size: None,
-            elapsed_millis: None,
+            start_timestamp_millis: None,
+            end_timestamp_millis: 0,
             added_witness_data: false,
             added_stats_data: false,
         }
@@ -215,7 +223,7 @@ impl BlockStats {
         self.added_witness_data = true;
     }
 
-    fn add_stats_data(&mut self, s: &StatsRecord, elapsed_millis: Option<i64>) {
+    fn add_stats_data(&mut self, s: &StatsRecord, start_timestamp_millis: Option<i64>, end_timestamp_millis: i64) {
         if self.added_stats_data {
             return;
         }
@@ -250,7 +258,8 @@ impl BlockStats {
         self.total_contract_db_stats = total_contract_db_stats;
         self.total_db_stats = s.final_stats - s.initial_stats;
         self.on_disk_size = s.on_disk_size;
-        self.elapsed_millis = elapsed_millis;
+        self.start_timestamp_millis = start_timestamp_millis;
+        self.end_timestamp_millis = end_timestamp_millis;
         self.added_stats_data = true;
     }
 }
@@ -290,22 +299,13 @@ impl ParityStats {
                         }
                         ParsedLine::Stats(block_num, ref datetime, ref s) => {
                             if in_range(min_block_num, max_block_num, *block_num) {
-                                let timedelta = match last_date_time {
-                                    Some(last_date_time) => {
-                                        let last_date_time_millis = last_date_time.timestamp_millis();
-                                        let date_time_millis = datetime.timestamp_millis();
-                                        Some(date_time_millis - last_date_time_millis)
-                                    }
-                                    None => {
-                                        last_date_time = Some(*datetime);
-                                        None
-                                    }
-                                };
-                                block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_stats_data(&s, timedelta);
+                                let last_date_time_millis = last_date_time.map(|l| l.timestamp_millis());
+                                last_date_time = Some(*datetime);
+                                block_stats.entry(*block_num).or_insert_with(|| BlockStats::new(*block_num)).add_stats_data(&s, last_date_time_millis, datetime.timestamp_millis());
                             }
                         }
                         ParsedLine::NewFile => {
-                            last_date_time = None
+
                         }
                     }
                 }
@@ -697,21 +697,37 @@ impl ParityStats {
         serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
     }
 
-    pub fn dump_db_bytes(&self, path: &Path) {
-        let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| (*k,
-                                                                                               v.elapsed_millis,
-                                                                                               v.total_db_stats.journal_stats.read.bytes,
-                                                                                               v.total_db_stats.journal_stats.write.bytes,
-                                                                                               v.total_db_stats.journal_stats.delete.bytes)).collect();
+    pub fn dump_db_bytes(&self, path: &Path, chunk_size: usize) {
+        let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_stats_data).collect::<Vec<_>>()
+            .chunks(chunk_size)
+            .map(|chunk| {
+                let start_time_millis = chunk[0].1.start_timestamp_millis.unwrap_or(chunk[0].1.end_timestamp_millis);
+                let starting_block_num = chunk[0].0;
+
+                let end_time_millis = chunk[chunk.len() - 1].1.end_timestamp_millis;
+                let ending_block_num = chunk[chunk.len() - 1].0;
+
+                let total = chunk.iter().map(|(_, v)| (v.total_db_stats.journal_stats.read.bytes, v.total_db_stats.journal_stats.write.bytes, v.total_db_stats.journal_stats.delete.bytes)).fold((0, 0, 0), |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2));
+
+                return (starting_block_num, ending_block_num, total.0, total.1, total.2);
+            }).collect();
         serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
     }
 
-    pub fn dump_db_ops(&self, path: &Path) {
-        let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_stats_data).map(|(k, v)| (*k,
-                                                                                               v.elapsed_millis,
-                                                                                               v.total_db_stats.journal_stats.read.ops,
-                                                                                               v.total_db_stats.journal_stats.write.ops,
-                                                                                               v.total_db_stats.journal_stats.delete.ops)).collect();
+    pub fn dump_db_ops(&self, path: &Path, chunk_size: usize) {
+        let d: Vec<_> = self.block_stats.iter().filter(|c| c.1.added_stats_data).collect::<Vec<_>>()
+            .chunks(chunk_size)
+            .map(|chunk| {
+                let start_time_millis = chunk[0].1.start_timestamp_millis.unwrap_or(chunk[0].1.end_timestamp_millis);
+                let starting_block_num = chunk[0].0;
+
+                let end_time_millis = chunk[chunk.len() - 1].1.end_timestamp_millis;
+                let ending_block_num = chunk[chunk.len() - 1].0;
+
+                let total = chunk.iter().map(|(_, v)| (v.total_db_stats.journal_stats.read.ops, v.total_db_stats.journal_stats.write.ops, v.total_db_stats.journal_stats.delete.ops)).fold((0, 0, 0), |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2));
+
+                return (starting_block_num, ending_block_num, end_time_millis - start_time_millis, total.0, total.1, total.2);
+            }).collect();
         serde_json::to_writer(BufWriter::new(OpenOptions::new().create(true).write(true).open(path).expect("Failed to open output file")), &d).expect("Failed to write to output file");
     }
 
@@ -842,14 +858,14 @@ fn main() {
 
     match opt.dump_db_bytes_output {
         Some(dump_db_bytes_output) => {
-            ps.dump_db_bytes(&dump_db_bytes_output);
+            ps.dump_db_bytes(&dump_db_bytes_output, opt.dump_db_bytes_chunk_size.unwrap());
         }
         None => {}
     }
 
     match opt.dump_db_ops_output {
         Some(dump_db_ops_output) => {
-            ps.dump_db_ops(&dump_db_ops_output);
+            ps.dump_db_ops(&dump_db_ops_output, opt.dump_db_ops_chunk_size.unwrap());
         }
         None => {}
     }
